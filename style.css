@@ -27,3 +27,5 @@ dialog{border:1px solid #4b626b;color:var(--ink);background:#172934;width:min(55
 .service-request.fulfilled>span,.service-request.fulfilled b{color:var(--mint)}
 .passenger-reward{display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;padding:12px 0;font-size:10px;color:var(--muted)}
 .passenger-reward b{font-weight:500;color:var(--gold)}
+
+.patience{margin:8px 0;color:#a9c0c7;font-size:11px}.patience>div{height:5px;margin-top:5px;background:#182c38;border-radius:8px;overflow:hidden}.patience i{display:block;height:100%;background:#79cba4}.patience.urgent{color:#ffac93}.patience.urgent i{background:#f28b70}.guest-card{flex-shrink:0}.guest-info{min-width:0}.guest-card .tags{flex-wrap:wrap}
