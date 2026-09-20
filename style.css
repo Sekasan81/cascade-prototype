@@ -6,3 +6,24 @@ dialog{border:1px solid #4b626b;color:var(--ink);background:#172934;width:min(55
 @media(max-width:900px){.layout{grid-template-columns:195px 1fr}.inspector{grid-column:1/-1;display:block}.inspector .action{max-width:none}.station-board{padding:20px}.room-art{height:155px}.inspector .detail-person>.alien{width:60px}.inspector .brief{max-width:450px}.inspector .story{max-width:600px}.topbar{flex-wrap:wrap;gap:12px}.topbar nav{margin-left:auto}.fatigue{display:none}.resource small{font-size:9px}.resource em{font-size:10px}.res-icon{display:none}}
 @media(max-width:580px){.topbar{padding:16px;justify-content:center}.brand{width:100%;justify-content:center}.brand h1{font-size:16px}.topbar nav{margin:0;width:100%;justify-content:center}.topbar nav button{font-size:10px;padding:7px 10px}.shiftbar{padding:13px 16px}.shiftbar>div:first-child{gap:6px;flex-wrap:wrap}.subtle{margin-left:2px;font-size:10px}.shiftbar b{font-size:12px}.goal{font-size:10px;white-space:nowrap}.goal b{font-size:14px;margin-left:4px}.resources{grid-template-columns:repeat(3,1fr);gap:14px;padding:16px}.resource small{font-size:10px}.resource strong{font-size:20px}.res-icon{display:grid;width:28px;height:31px;font-size:18px}.layout{grid-template-columns:1fr;padding:16px;gap:17px}.queue{padding:14px}.queue .section-caption{margin-bottom:10px}.guest-list{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.guest-card .alien{width:48px}.guest-info>span{font-size:9px}.queue .schedule{margin-top:13px;padding-top:8px;display:flex;flex-wrap:wrap;gap:6px 13px}.schedule h3{width:100%;margin:3px 0}.arrival{font-size:9px;margin:4px 0;gap:5px}.schedule .hint{width:100%;margin:3px 0}.reputation{display:flex;gap:15px;margin-top:10px;padding-top:8px;flex-wrap:wrap}.reputation h3{width:100%;margin:0}.reputation>div{flex:1;min-width:75px;font-size:10px;margin:0}.station-board{padding:13px}.station h2{font-size:16px}.room-art{height:125px}.room-heading b{font-size:10px}.room-heading small{font-size:8px}.rooms{gap:9px}.utility{padding:10px 5px}.utility small{font-size:7px}.utility b{font-size:10px}.utilities{gap:8px}.inspector{grid-column:auto;padding:20px}.station-controls{grid-template-columns:1fr 1fr}.footer{margin:0 16px 18px;flex-wrap:wrap;gap:10px;font-size:9px}.footer span:nth-child(2){display:none}.settings-fields,.help-grid{grid-template-columns:1fr}.settings-actions{flex-direction:column}.settings-actions .primary{margin:0}.modal-top h2{font-size:21px}dialog{padding:20px}.destination b{font-size:10px}.destination small{font-size:7px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+.guest-info>.card-link{font-size:9px;color:var(--mint);margin-top:9px}
+.passenger-requirements{border:1px solid #b3e9c831;border-radius:10px;background:#10212b;overflow:hidden}
+.passenger-requirements>h3{margin:0;padding:12px 13px;color:var(--mint);background:#b3e9c80a;font-size:11px;letter-spacing:.6px}
+.requirement-section{padding:12px 13px;border-top:1px solid var(--line)}
+.requirement-section h4{font-size:12px;margin:0 0 7px;color:var(--ink)}
+.requirement-section p{font-size:11px;line-height:1.6}
+.requirement-section .requirement-note{font-size:10px;color:var(--muted);margin-top:5px}
+.requirement-status{color:var(--muted);margin-top:7px}
+.requirement-status.ready{color:var(--mint)}
+.requirement-status.attention{color:var(--gold)}
+.requested-routes{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.requested-route{padding:4px 7px;font-size:11px;border:1px solid #405764;border-radius:5px}
+.requested-route.chosen{border-color:var(--mint);color:var(--mint);background:#b3e9c80c}
+.service-requests{padding:0;margin:0;list-style:none;display:grid;gap:9px}
+.service-request{display:flex;gap:8px;align-items:start;font-size:11px}
+.service-request>span{color:var(--muted);padding-top:1px}
+.service-request b{display:block;font-weight:500}
+.service-request small{display:block;font-size:10px;color:var(--muted);margin-top:2px;line-height:1.5}
+.service-request.fulfilled>span,.service-request.fulfilled b{color:var(--mint)}
+.passenger-reward{display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;padding:12px 0;font-size:10px;color:var(--muted)}
+.passenger-reward b{font-weight:500;color:var(--gold)}
