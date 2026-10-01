@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import {createGame,act,reason,nextShift,consumption,seats,validSave} from './engine.mjs';
+import {createGame as baseGame,act,reason,nextShift,consumption,seats,validSave} from './engine.mjs';
+const createGame=(options={})=>baseGame({prepareCost:0,...options}); // Isolate legacy resource-consumption checks from the separately tested preparation fee.
 let passed=0;function test(name,fn){fn();passed++;console.log('PASS '+name);}
 function ready(s){s.rooms.forEach(r=>act(s,'prepare',r.id));}
 function accept(s,id){assert.equal(act(s,'accept',id).ok,true);}
 function talk(s,id){assert.equal(act(s,'talk',id).ok,true);}
-test('Spec defaults, three room types and no old economy',()=>{const s=createGame();assert.equal(s.config.ticks,30);assert.equal(s.resource,45);assert.deepEqual(s.rooms.map(r=>r.type),['dry','dry','water']);assert.equal(s.credits,undefined);assert(validSave(s));});
+test('Spec defaults and three room types',()=>{const s=createGame();assert.equal(s.config.ticks,30);assert.equal(s.resource,45);assert.deepEqual(s.rooms.map(r=>r.type),['dry','dry','water']);assert.equal(s.credits,0);assert(validSave(s));});
 test('Cannot accept into unprepared room; blocked actions are no-ops',()=>{const s=createGame(),before=JSON.stringify(s);assert(!act(s,'accept','P0').ok);assert.equal(JSON.stringify(s),before);});
 test('Preparation is free and repeat preparation a true no-op',()=>{const s=createGame();act(s,'prepare',0);assert.equal(s.tick,0);const before=JSON.stringify(s);assert(!act(s,'prepare',0).ok);assert.equal(JSON.stringify(s),before);});
 test('Acceptance consumes one tick and one unit for the new passenger',()=>{const s=createGame();ready(s);accept(s,'P0');assert.equal(s.tick,1);assert.equal(s.resource,44);assert.equal(s.rooms[0].p.id,'P0');});
@@ -27,4 +28,6 @@ test('Long play has unique, repeating flight schedule across shifts',()=>{const 
 test('Configurable room counts',()=>{const s=createGame({rooms:['water','water','dry','dry','dry']});assert.equal(s.rooms.length,5);ready(s);assert(s.rooms.every(r=>r.prepared));});
 test('Seeded action fuzz: capacity, resource, room identity and time invariants',()=>{let seed=13;const rand=()=>((seed=(seed*1664525+1013904223)>>>0)/2**32);for(let run=0;run<100;run++){const s=createGame({resource:150});for(let k=0;k<180;k++){if(s.ended){nextShift(s);continue;}if(s.failed)break;ready(s);const people=[...s.queue,...s.rooms.flatMap(r=>r.p?[r.p]:[])],p=people[Math.floor(rand()*people.length)];const action=['accept','talk','fulfill','assign','wait'][Math.floor(rand()*5)];act(s,action,p?.id,s.flights[Math.floor(rand()*Math.min(6,s.flights.length))].id);assert(s.resource>=0);assert(s.tick<=s.config.ticks);assert(s.flights.every(f=>f.used<=f.capacity));const ids=s.rooms.flatMap(r=>r.p?[r.p.id]:[]);assert.equal(ids.length,new Set(ids).size);for(const r of s.rooms){if(r.p)assert.equal(r.p.type,r.type);}for(const f of s.flights)assert.equal(f.used,s.rooms.reduce((n,r)=>n+(r.p?.flight===f.id?seats(r.p):0),0));}}});
 console.log(`\n${passed} tests passed.`);
+
+
 
