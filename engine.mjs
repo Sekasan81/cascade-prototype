@@ -1,4 +1,4 @@
-import {RESOURCES,RACES,PROFESSIONS,CHARACTERS,FEATURES,PROBABILITIES,emptyResources,round,generatePassenger,passengerStats} from './passengers.mjs?v=races-6';
+import {RESOURCES,RACES,PROFESSIONS,CHARACTERS,FEATURES,PROBABILITIES,emptyResources,round,generatePassenger,passengerStats} from './passengers.mjs?v=layout-7';
 export {RESOURCES,RACES,PROFESSIONS,CHARACTERS,FEATURES,PROBABILITIES,passengerStats};
 export const VERSION=4;
 export const ECONOMY={startCredits:0,prepareCost:2,refillRate:3,refillMax:100};
@@ -36,8 +36,8 @@ export function restoreGame(saved){
 }
 export function roomReason(s,p,r){
  if(!r||r.built===false)return 'Не построена / заблокирована';
- if(r.p)return 'Занята';if(r.type!==p.type)return 'Не подходит: '+TYPES[r.type];
- if(!r.prepared&&s.resources[ROOM_RESOURCE[r.type]]<s.config.prepareCost)return `Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[r.type]].name.toLowerCase()}`;
+ if(r.p)return 'Занята';
+ if((!r.prepared||r.type!==p.type)&&s.resources[ROOM_RESOURCE[p.type]]<s.config.prepareCost)return `Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[p.type]].name.toLowerCase()}`;
  return '';
 }
 export function reason(s,action,id,extra){
@@ -46,7 +46,7 @@ export function reason(s,action,id,extra){
  const p=findPassenger(s,id),room=occupiedRoom(s,id);
  if(action==='wait')return '';
  if(action==='refill'){const n=Number(id);return !RESOURCES[extra]?'Выберите ресурс':!Number.isInteger(n)||n<1||n>s.config.refillMax?'Недопустимое количество':s.resources[extra]+n>s.config.resource?'Превышен максимальный запас':s.credits<n*s.config.refillRate?'Недостаточно кредитов':'';}
- if(action==='prepare'){const r=s.rooms.find(r=>r.id===id);return !r||r.built===false?'Комната не построена':r.p?'Комната занята':r.prepared?'Комната уже подготовлена':s.resources[ROOM_RESOURCE[r.type]]<s.config.prepareCost?`Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[r.type]].name.toLowerCase()}`:'';}
+ if(action==='prepare'){const r=s.rooms.find(r=>r.id===id),type=extra??r?.type;return !r||r.built===false?'Комната не построена':r.p?'Комната занята':!TYPES[type]?'Выберите среду':r.prepared&&r.type===type?'Комната уже подготовлена':s.resources[ROOM_RESOURCE[type]]<s.config.prepareCost?`Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[type]].name.toLowerCase()}`:'';}
  if(!p)return 'Выберите пассажира';
  if(action==='accept'){if(!s.queue.includes(p))return 'Пассажир уже на станции';return roomReason(s,p,s.rooms.find(r=>r.id===Number(extra)));}
  if(!room)return 'Сначала выберите комнату для пассажира';
@@ -61,8 +61,8 @@ export function reason(s,action,id,extra){
 export function act(s,action,id,extra){
  const blocked=reason(s,action,id,extra);if(blocked)return {ok:false,message:blocked};const p=findPassenger(s,id);
  if(action==='refill'){const n=Number(id);s.resources[extra]=round(s.resources[extra]+n);s.credits=Math.round((s.credits-n*s.config.refillRate)*100)/100;note(s,`Куплено: ${RESOURCES[extra].name}, ${n} ед. за ${n*s.config.refillRate} кр.`);}
- if(action==='prepare'){const r=s.rooms.find(r=>r.id===id),k=ROOM_RESOURCE[r.type];s.resources[k]=round(s.resources[k]-s.config.prepareCost);r.prepared=true;note(s,`Комната ${id+1} подготовлена.`);}
- if(action==='accept'){const r=s.rooms.find(r=>r.id===Number(extra));if(!r.prepared){s.resources[ROOM_RESOURCE[r.type]]=round(s.resources[ROOM_RESOURCE[r.type]]-s.config.prepareCost);r.prepared=true;}r.p=p;s.queue=s.queue.filter(x=>x.id!==id);delete p.patience;s.stats.accepted+=p.count;note(s,`${p.name}: комната ${r.id+1}.`);advance(s);}
+ if(action==='prepare'){const r=s.rooms.find(r=>r.id===id),type=extra??r.type,k=ROOM_RESOURCE[type];s.resources[k]=round(s.resources[k]-s.config.prepareCost);r.type=type;r.prepared=true;note(s,`Комната ${id+1}: ${TYPES[type].toLowerCase()} среда подготовлена.`);}
+ if(action==='accept'){const r=s.rooms.find(r=>r.id===Number(extra));if(!r.prepared||r.type!==p.type){const k=ROOM_RESOURCE[p.type];s.resources[k]=round(s.resources[k]-s.config.prepareCost);r.type=p.type;r.prepared=true;}r.p=p;s.queue=s.queue.filter(x=>x.id!==id);delete p.patience;s.stats.accepted+=p.count;note(s,`${p.name}: комната ${r.id+1}.`);advance(s);}
  if(action==='assign'){const f=s.flights.find(f=>f.id===extra);f.used+=seats(p);p.flight=f.id;note(s,`${p.name}: назначен на ${f.dest}, ${seats(p)} мест.`);advance(s);}
  if(action==='wait')advance(s);return {ok:true};
 }
