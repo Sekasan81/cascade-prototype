@@ -11,7 +11,7 @@ export const CHARACTERS={calm:{name:'Спокойный'},aggressive:{name:'Аг
 export const FEATURES={none:{name:'Нет особенности',icon:'—'},pet:{name:'Питомец',icon:'🐾',seats:1,yield:2},pair:{name:'Пара',icon:'👥',count:2},luggage:{name:'Багаж',icon:'🧳',seats:1,pay:1.2},heavy:{name:'Много багажа',icon:'📦',seats:2,pay:1.5},vip:{name:'VIP',icon:'★',use:2,pay:2}};
 export const PROBABILITIES={pet:10,pair:10,luggage:20,heavy:5,vip:5,touristPet:30,touristPair:50,merchantLuggage:40};
 export const emptyResources=()=>({water:0,food:0,bio:0,gas:0});
-export const round=n=>Math.round((n+Number.EPSILON)*1000)/1000;
+export const round=n=>Math.round(n+Number.EPSILON);
 export function random(s){s.rng=(Math.imul(s.rng,1664525)+1013904223)>>>0;return s.rng/4294967296;}
 export const roll=(s,min,max)=>min+Math.floor(random(s)*(max-min+1));
 const pick=(s,a)=>a[Math.floor(random(s)*a.length)];
@@ -29,7 +29,7 @@ export function passengerStats(p){
  const used=emptyResources(),made=emptyResources();
  if(race.consume)used[race.consume]=round(race.use*(job.use||1)*(race.consume==='food'?(job.food||1):1)*(character.use||1)*(feature.use||1)*count);
  if(race.produce)made[race.produce]=round(race.yield*(job.yield||1)*(character.yield||1)*(feature.yield||1)*count);
- return {used,made,seats:race.seats*count+(feature.seats||0),count,payment:Math.round(p.basePay*(job.pay||1)*(character.pay||1)*(feature.pay||1)*count*100)/100};
+ return {used,made,seats:race.seats*count+(feature.seats||0),count,payment:round(p.basePay*(job.pay||1)*(character.pay||1)*(feature.pay||1)*count)};
 }
 export function generatePassenger(s){
  const n=s.serial++,raceId=pick(s,Object.keys(RACES)),race={...RACES[raceId],...s.config.races?.[raceId]},profession=pick(s,Object.keys(PROFESSIONS));
