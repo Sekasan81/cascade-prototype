@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import {createGame,act,reason,advance,rank,ROUTES,FOODS,unlockedFoods,usedSeats,restoreGame,SAVE_KEY,spawn,power,production,boosterCount,MISSIONS,missionProgress,roomPrice,warpPrice,tutorialStep} from './living-engine.mjs';
+let passed=0;
+function test(name,fn){try{fn();console.log('PASS',name);passed++;}catch(e){console.error('FAIL',name);throw e;}}
+const run=(s,a,id=null,x=null)=>{const r=act(s,a,id,x);assert.equal(r.ok,true,r.reason);};
+function accepted(){const s=createGame(22);run(s,'accept',0,0);run(s,'assign',0,0);return s;}
+function unlocked(){const s=createGame(22);s.tutorial=false;s.stats.served=3;s.xp=60;s.credits=1000;return s;}
+test('new game is paused, affordable, isolated and staged',()=>{const s=createGame();assert(s.paused);assert.equal(s.rooms.length,2);assert.equal(s.factory.open,false);assert.deepEqual(unlockedFoods(s),[0,1]);assert.notEqual(SAVE_KEY,'cascade-save');});
+test('pause freezes every part of the simulation',()=>{const s=accepted();run(s,'launch',0);const before=JSON.stringify(s);advance(s,600);assert.equal(JSON.stringify(s),before);});
+test('first playable tutorial completes with real reward and stops time',()=>{const s=accepted();run(s,'launch',0);assert.equal(s.cells,11);run(s,'pause');advance(s,20);assert.equal(s.stats.served,1);assert.equal(s.time,12);assert(s.paused);assert.equal(s.rooms[0].p,null);assert.equal(rank(s),2);run(s,'claim');assert(!s.tutorial);assert.equal(s.mission,1);const b=JSON.stringify(s);assert.equal(act(s,'claim').ok,false);assert.equal(JSON.stringify(s),b);});
+test('failed and duplicate actions are true no-ops',()=>{const s=accepted();for(const args of [['accept',0,0],['assign',0,0],['route',0],['buyMachine','nonsense'],['what']]){const b=JSON.stringify(s);assert.equal(act(s,...args).ok,false);assert.equal(JSON.stringify(s),b);}run(s,'launch',0);for(const a of ['launch','unassign','evacuate']){const b=JSON.stringify(s);assert.equal(act(s,a,0).ok,false);assert.equal(JSON.stringify(s),b);}});
+test('room change consumes two setup portions and one first meal',()=>{const s=createGame();const n=s.foods[0];run(s,'accept',0,1);assert.equal(s.rooms[1].type,'dry');assert.equal(s.foods[0],n-3);});
+test('generation never exceeds capacity or closed directions',()=>{const s=unlocked();for(let i=0;i<500;i++){s.queue=[];spawn(s);const p=s.queue[0];assert(p.seats<=3);assert(p.dest===null||s.routes.includes(p.dest));assert(unlockedFoods(s).includes(p.food));}run(s,'route',1);assert.deepEqual(unlockedFoods(s),[0,1,2,3]);});
+test('warp destination, capacity, reassignment and locked launch',()=>{const s=unlocked();s.rooms.push({id:2,type:'dry',p:null});run(s,'buyWarp');s.queue[0].dest=0;run(s,'accept',0,0);run(s,'assign',0,0);run(s,'assign',0,1);assert.deepEqual(s.warps[0].ids,[]);assert.deepEqual(s.warps[1].ids,[0]);run(s,'launch',1);assert.match(reason(s,'assign',0,0),/Запущенный/);assert.match(reason(s,'evacuate',0),/запущен/);});
+test('full-batch bonus rewards sharing without charging empty seats',()=>{const s=unlocked();s.queue=[];spawn(s,true);spawn(s,true);const ids=s.queue.map(p=>p.id);run(s,'accept',ids[0],0);run(s,'accept',ids[1],1);for(const id of ids)run(s,'assign',id,0);const expected=2*Math.round(38*1.1),cells=s.cells;run(s,'launch',0);assert.equal(s.cells,cells-2);s.paused=false;advance(s,60);assert.equal(s.stats.earned,expected);assert.equal(s.stats.batch,2);});
+test('one full warning cycle precedes dissatisfaction; recovery keeps timer',()=>{const s=createGame();s.tutorial=false;run(s,'accept',0,0);s.foods[0]=0;s.paused=false;advance(s,30);let p=s.rooms[0].p;assert(!p.dissatisfied);assert(!p.fed);advance(s,30);assert(p.dissatisfied);s.foods[0]=5;advance(s,1);assert(p.fed);assert.equal(p.cycle,29);advance(s,59);assert.equal(p.recovery,2);});
+test('hungry cycles do not manufacture free waste',()=>{const s=createGame();s.tutorial=false;run(s,'accept',0,0);s.foods[0]=0;s.paused=false;advance(s,300);assert.equal(s.rooms[0].p.waste,5);});
+test('starving passengers do not block departures, payout is zero',()=>{const s=accepted();s.tutorial=false;s.foods[0]=0;s.paused=false;advance(s,65);run(s,'launch',0);advance(s,60);assert.equal(s.stats.earned,0);assert.equal(s.stats.served,1);assert.equal(s.rooms[0].p,null);});
+test('queue expiry has no penalty and no invisible backlog',()=>{const s=createGame();s.tutorial=false;s.paused=false;advance(s,600);assert.equal(s.credits,120);assert.equal(s.xp,0);assert(s.queue.length<=s.queueSize);assert(s.queue.every(p=>p.patience>0));});
+test('emergency supply recovers a broke station, repeat is blocked',()=>{const s=unlocked();s.credits=0;s.foods.fill(0);s.cells=0;run(s,'rescue');assert.equal(s.foods[0],5);assert.equal(s.cells,6);const b=JSON.stringify(s);assert(!act(s,'rescue').ok);assert.equal(JSON.stringify(s),b);run(s,'accept',s.queue[0].id,0);run(s,'assign',s.rooms[0].p.id,0);run(s,'launch',0);s.paused=false;advance(s,60);assert(s.credits>0);});
+test('factory unlock includes functioning starter chain',()=>{const s=unlocked();run(s,'openFactory');s.paused=false;advance(s,140);assert(s.stats.made>=3);assert.equal(s.factory.machines.length,3);assert(s.factory.resources.trash<30);});
+test('factory pauses and overloads atomically',()=>{const s=unlocked();run(s,'openFactory');s.paused=false;advance(s,4);s.factory.power=1;const before=JSON.stringify(s.factory);advance(s,20);assert.equal(JSON.stringify(s.factory),before);s.factory.power=80;s.paused=true;const b=JSON.stringify(s);advance(s,100);assert.equal(JSON.stringify(s),b);});
+test('removing machine refunds in-process inputs and preserves its level',()=>{const s=unlocked();run(s,'openFactory');run(s,'upgradeMachine',0);s.paused=false;advance(s,1);s.paused=true;const resource=s.factory.resources.trash,refund=s.factory.machines[0].job.input.trash;run(s,'remove',0);assert.equal(s.factory.resources.trash,resource+refund);assert.equal(s.factory.inventory[0].level,2);run(s,'place','recycler',0);assert.equal(s.factory.machines.at(-1).level,2);assert.equal(s.factory.inventory.length,0);});
+test('recipe change refunds reserved inputs exactly once',()=>{const s=unlocked();run(s,'openFactory');s.paused=false;advance(s,1);s.paused=true;const m=s.factory.machines[0];assert(m.job);run(s,'recipe',m.id,1);assert.equal(s.factory.resources.trash,30);const b=JSON.stringify(s);assert(!act(s,'recipe',m.id,1).ok);assert.equal(JSON.stringify(s),b);});
+test('booster only affects orthogonal production and scales input equally',()=>{const s=unlocked();s.xp=140;run(s,'openFactory');run(s,'buyMachine','booster');run(s,'place','booster',5);const m=s.factory.machines[0];assert.equal(boosterCount(s,m),1);assert.equal(boosterCount(s,s.factory.machines[1]),0);assert.equal(boosterCount(s,s.factory.machines.at(-1)),0);assert.equal(production(s,m).input.trash,6);assert.equal(production(s,m).output.w0,6);});
+test('full expansion is nine cells and 450 credits',()=>{const s=unlocked();run(s,'openFactory');const before=s.credits;for(let i=0;i<25;i++)if(!s.factory.cells.includes(i))run(s,'expand',i);assert.equal(s.factory.cells.length,25);assert.equal(s.credits,before-450);});
+test('warp cells can be produced by crafter',()=>{const s=unlocked();run(s,'openFactory');const f=s.factory;f.resources.metal=3;f.resources.chemical=3;run(s,'recipe',2,8);const c=s.cells;s.paused=false;advance(s,26);assert.equal(s.cells,c+1);});
+test('save round trip keeps bookings, jobs, progression and RNG; restores paused',()=>{const s=unlocked();run(s,'openFactory');run(s,'accept',0,0);run(s,'assign',0,0);run(s,'launch',0);s.paused=false;advance(s,9);const restored=restoreGame(JSON.stringify(s));assert(restored);assert(restored.paused);assert.equal(restored.warps[0].remaining,51);assert.deepEqual(restored.factory,s.factory);assert.equal(restored.rng,s.rng);});
+test('invalid and foreign saves rejected',()=>{for(const bad of [null,'{','{}',{version:5}, {...createGame(),credits:-1},{...createGame(),foods:[]}])assert.equal(restoreGame(bad),null);});
+test('tutorial can recover after voluntary passenger evacuation',()=>{const s=accepted();run(s,'evacuate',0);assert.equal(tutorialStep(s),0);assert.equal(s.queue.length,1);const p=s.queue[0];run(s,'accept',p.id,0);assert.equal(tutorialStep(s),1);run(s,'assign',p.id,0);run(s,'launch',0);assert.equal(tutorialStep(s),3);s.paused=false;advance(s,12);assert.equal(tutorialStep(s),4);});
+test('upgrading active production refunds current inputs, preserving material',()=>{const s=unlocked();run(s,'openFactory');s.paused=false;advance(s,1);s.paused=true;const before=s.credits;run(s,'upgradeMachine',0);assert.equal(s.credits,before-50);assert.equal(s.factory.resources.trash,30);assert.equal(s.factory.machines[0].level,2);assert.equal(s.factory.machines[0].job,null);});
+test('large and small time slices agree',()=>{const a=unlocked();a.paused=false;const b=structuredClone(a);advance(a,120);for(let i=0;i<1200;i++)advance(b,.1);assert(Math.abs(a.time-b.time)<=1);});
+
+// End-to-end economy policy: varied passengers, normal market prices and all chapters.
+function simulate(seed){const s=createGame(seed);s.tutorial=false;s.paused=false;let completedAt=null;
+ for(let t=0;t<3600;t++){
+  while(MISSIONS[s.mission]&&missionProgress(s)>=MISSIONS[s.mission].target)run(s,'claim');
+  if(!s.factory.open&&!reason(s,'openFactory'))run(s,'openFactory');
+  if(s.factory.open&&s.credits>=ROUTES[1].price+90&&!reason(s,'route',1))run(s,'route',1);
+  if(s.routes.includes(1)&&s.credits>=ROUTES[2].price+120&&!reason(s,'route',2))run(s,'route',2);
+  if(s.rooms.length<5&&s.credits>roomPrice(s)+100&&!reason(s,'buyRoom'))run(s,'buyRoom');
+  if(s.warps.length<3&&s.credits>warpPrice(s)+100&&!reason(s,'buyWarp'))run(s,'buyWarp');
+  for(const i of unlockedFoods(s))if(s.foods[i]<4&&!reason(s,'buyFood',i))run(s,'buyFood',i);
+  if(s.cells<5&&!reason(s,'buyCells'))run(s,'buyCells');
+  if(!reason(s,'rescue')&&s.credits<25)run(s,'rescue');
+  for(const p of [...s.queue]){if(p.wanderer)run(s,'destination',p.id,0);const room=s.rooms.find(r=>!reason(s,'accept',p.id,r.id));if(room)run(s,'accept',p.id,room.id);}
+  for(const r of s.rooms)if(r.p&&r.p.warp===null){const w=s.warps.find(w=>!reason(s,'assign',r.p.id,w.id));if(w)run(s,'assign',r.p.id,w.id);}
+  for(const w of s.warps)if(!reason(s,'launch',w.id)&&(w.ids.length>=2||t%10===0))run(s,'launch',w.id);
+  advance(s,1);assert(s.credits>=0&&s.cells>=0&&s.foods.every(n=>Number.isInteger(n)&&n>=0));assert(Object.values(s.factory.resources).every(n=>Number.isInteger(n)&&n>=0));
+  if(s.mission===MISSIONS.length){completedAt=t;break;}
+ }
+ return {seed,completedAt,served:s.stats.served,made:s.stats.made,credits:s.credits,rescues:s.helpUsed,mission:s.mission};
+}
+test('20 seeded runs reach every chapter with nonnegative economy',()=>{const runs=Array.from({length:20},(_,i)=>simulate(i*943+18));console.log('BALANCE',JSON.stringify(runs));assert(runs.every(r=>r.completedAt!==null),JSON.stringify(runs.filter(r=>!r.completedAt)));});
+console.log(`${passed} checks passed`);
