@@ -1,91 +1,77 @@
-import {RESOURCES,RACES,PROFESSIONS,CHARACTERS,FEATURES,PROBABILITIES,emptyResources,round,generatePassenger,passengerStats} from './passengers.mjs?v=growth-8';
-export {RESOURCES,RACES,PROFESSIONS,CHARACTERS,FEATURES,PROBABILITIES,passengerStats};
-export const VERSION=5;
-export const ECONOMY={startCredits:0,prepareCost:2,refillRate:3,refillMax:100,roomCost:100,maxRooms:6,seatCost:50};
-export const DEFAULTS={...ECONOMY,ticks:30,resource:45,rooms:['dry','water'],arrivalEvery:3,probabilities:PROBABILITIES,races:RACES};
-export const DESTS=['Марс','Сигма-4','Альфа-9'];
-export const TYPES={dry:'Сухая',water:'Водная',soil:'Грунтовая',gas:'Газовая'};
-export const ROOM_RESOURCE={dry:'food',water:'water',soil:'bio',gas:'gas'};
-export const ENVIRONMENTS={dry:'Сухая умеренная среда',water:'Водная среда',soil:'Умеренная грунтовая среда',gas:'Газовая среда'};
-export function createGame(options={}){
- const config={...DEFAULTS,...options,probabilities:{...PROBABILITIES,...options.probabilities},races:Object.fromEntries(Object.entries(RACES).map(([k,v])=>[k,{...v,...options.races?.[k]}]))};config.rooms=[...config.rooms];
- for(const k of [...Object.keys(ECONOMY),'resource'])config[k]=Math.max(0,round(config[k]));config.maxRooms=Math.max(config.rooms.length,config.maxRooms);config.refillMax=Math.max(1,config.refillMax);
- const s={version:VERSION,config,shift:1,tick:0,time:0,resources:Object.fromEntries(Object.keys(RESOURCES).map(k=>[k,config.resource])),credits:config.startCredits,rng:options.seed??Math.floor(Math.random()*4294967296),reputation:10,repEvents:[],serial:0,queue:[],rooms:config.rooms.map((type,i)=>({id:i,type,prepared:true,built:true,p:null})),directionSeats:Object.fromEntries(DESTS.map(d=>[d,0])),flights:[],log:[],stats:{accepted:0,departed:0,left:0,flights:0},ended:false,failed:false};
- schedule(s,0);for(let i=0;i<3;i++)spawn(s);note(s,'Терминал открыт. Выберите пассажира и подходящую комнату.');return s;
-}
-function schedule(s,from){for(let t=from+1;t<=from+60;t++){let d=t%9===5?0:t%9===7?1:t%9===0?2:-1;if(d>=0)s.flights.push({id:`F${t}`,dest:DESTS[d],at:t,capacity:[4,3,3][d]+(s.directionSeats[DESTS[d]]||0),used:0});}}
-function spawn(s){s.queue.push(generatePassenger(s));}
-export const seats=p=>p.flight&&p.reservedSeats!=null?p.reservedSeats:passengerStats(p).seats;
-export function resourceFlow(s){const used=emptyResources(),made=emptyResources();for(const r of s.rooms){if(!r.p)continue;const rates=passengerStats(r.p);for(const k of Object.keys(RESOURCES)){used[k]=round(used[k]+rates.used[k]);made[k]=round(made[k]+rates.made[k]);}}return {used,made};}
-export const findPassenger=(s,id)=>s.queue.find(p=>p.id===id)||s.rooms.find(r=>r.p?.id===id)?.p;
-export const occupiedRoom=(s,id)=>s.rooms.find(r=>r.p?.id===id);
-export function note(s,text){s.log.unshift({at:s.tick,shift:s.shift,text});s.log=s.log.slice(0,30);}
-export const reputationReward=p=>p.feature==='pair'?3:p.feature==='pet'?2:1;
-function reputationChange(s,delta,p){s.reputation=Math.min(100,s.reputation+delta);s.repEvents.push({delta,name:p.name});note(s,`${p.name}: репутация ${delta>0?'+':''}${delta}.`);}
-function rewardDeparture(s,p){const amount=passengerStats(p).payment;s.credits+=amount;reputationChange(s,reputationReward(p),p);s.repEvents.at(-1).credits=amount;note(s,`${p.name}: +${amount} кр.`);}
-export function restoreGame(saved){
- if(!saved)return null;const s=structuredClone(saved);
- if([1,2,3].includes(s.version)){
-  const oldResource=s.resource??45;s.config={...DEFAULTS,...s.config,probabilities:{...PROBABILITIES},races:structuredClone(RACES)};
-  s.resources=Object.fromEntries(Object.keys(RESOURCES).map(k=>[k,oldResource]));s.credits??=0;s.rng??=98173;s.reputation??=10;s.repEvents??=[];
-  function migrate(p){const reserved=p.count+(p.condition==='pet'||p.condition==='cargo'?1:0);const raceId=p.race==='Споровик'?'fungal':p.type==='water'?'aquatic':'stone';const base=structuredClone(RACES[raceId]);const feature=({pet:'pet',group:'pair',cargo:'luggage'})[p.condition]||'none';Object.assign(p,{raceId,race:base.name,base,profession:'researcher',character:'calm',feature,type:base.room,basePay:base.payMin,initialPatience:p.patience??base.waitMin});p.count=passengerStats(p).count;if(p.flight)p.reservedSeats=reserved;delete p.condition;delete p.talked;delete p.fulfilled;delete p.decision;}
-  s.queue.forEach(migrate);for(const r of s.rooms){r.built=true;if(r.p){migrate(r.p);r.type=r.p.type;delete r.p.patience;}}
-  for(const type of Object.keys(TYPES))if(!s.rooms.some(r=>r.type===type))s.rooms.push({id:Math.max(...s.rooms.map(r=>r.id))+1,type,built:true,prepared:false,p:null});
-  s.config.rooms=s.rooms.map(r=>r.type);s.version=4;delete s.resource;note(s,'Обновление: четыре ресурса, новые свойства пассажиров. Старые брони сохранены.');
- }
- if(s.version===4){s.config={...DEFAULTS,...s.config,rooms:[...DEFAULTS.rooms],maxRooms:Math.max(DEFAULTS.maxRooms,s.rooms.length)};for(const k of [...Object.keys(ECONOMY),'resource'])s.config[k]=round(s.config[k]);s.rooms.forEach(r=>r.prepared=true);s.resources=Object.fromEntries(Object.entries(s.resources).map(([k,v])=>[k,round(v)]));s.credits=round(s.credits);s.repEvents.forEach(e=>{if(e.credits!=null)e.credits=round(e.credits)});s.directionSeats=Object.fromEntries(DESTS.map(d=>[d,0]));s.version=VERSION;note(s,'Среда комнат сохраняется. Ресурсы и кредиты округлены до целых; старые комнаты и брони сохранены. Новая игра начинается с двух комнат.');}
- return validSave(s)?s:null;
-}
-export function roomReason(s,p,r){
- if(!r||r.built===false)return 'Не построена / заблокирована';
- if(r.p)return 'Занята';
- if(r.type!==p.type&&s.resources[ROOM_RESOURCE[p.type]]<s.config.prepareCost)return `Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[p.type]].name.toLowerCase()}`;
- return '';
-}
-export function reason(s,action,id,extra){
- if(s.failed)return 'Ресурс исчерпан. Начните заново.';
- if(s.ended)return 'Смена завершена. Откройте следующую смену.';
- const p=findPassenger(s,id),room=occupiedRoom(s,id);
- if(action==='wait')return '';
- if(action==='buy-room')return s.rooms.length>=s.config.maxRooms?'Достигнут предел комнат':s.credits<s.config.roomCost?'Недостаточно кредитов':'';
- if(action==='buy-seats'){const n=Number(extra);return !DESTS.includes(id)?'Неизвестное направление':!Number.isInteger(n)||n<1||n>100?'Выберите от 1 до 100 мест':s.credits<n*s.config.seatCost?'Недостаточно кредитов':'';}
- if(action==='refill'){const n=Number(id);return !RESOURCES[extra]?'Выберите ресурс':!Number.isInteger(n)||n<1||n>s.config.refillMax?'Недопустимое количество':s.resources[extra]+n>s.config.resource?'Превышен максимальный запас':s.credits<n*s.config.refillRate?'Недостаточно кредитов':'';}
- if(action==='prepare'){const r=s.rooms.find(r=>r.id===id),type=extra??r?.type;return !r||r.built===false?'Комната не построена':r.p?'Комната занята':!TYPES[type]?'Выберите среду':r.type===type?'Эта среда уже установлена — перестройка не нужна':s.resources[ROOM_RESOURCE[type]]<s.config.prepareCost?`Нужно ${s.config.prepareCost} ${RESOURCES[ROOM_RESOURCE[type]].name.toLowerCase()}`:'';}
- if(!p)return 'Выберите пассажира';
- if(action==='accept'){if(!s.queue.includes(p))return 'Пассажир уже на станции';return roomReason(s,p,s.rooms.find(r=>r.id===Number(extra)));}
- if(!room)return 'Сначала выберите комнату для пассажира';
- if(p.flight)return 'Пассажир уже назначен. Вылет произойдёт автоматически.';
- if(action==='assign'){
-  const f=s.flights.find(f=>f.id===extra);if(!f||f.at<=s.time)return 'Рейс уже отправился';if(f.dest!==p.dest)return 'Другое направление';if(f.capacity-f.used<seats(p))return `Нужно ${seats(p)} мест, свободно ${f.capacity-f.used}`;
-  const nearest=s.flights.find(f=>f.dest===p.dest&&f.capacity-f.used>=seats(p));
-  return p.character==='aggressive'&&f.id!==nearest?.id?'Агрессивный: только ближайший подходящий рейс':'';
- }
- return 'Неизвестное действие';
-}
-export function act(s,action,id,extra){
- const blocked=reason(s,action,id,extra);if(blocked)return {ok:false,message:blocked};const p=findPassenger(s,id);
- if(action==='buy-room'){s.credits-=s.config.roomCost;const id=Math.max(-1,...s.rooms.map(r=>r.id))+1;s.rooms.push({id,type:'dry',prepared:true,built:true,p:null});note(s,`Куплена комната ${id+1}: −${s.config.roomCost} кр. Сухая среда включена в стоимость.`);}
- if(action==='buy-seats'){const n=Number(extra);s.credits-=n*s.config.seatCost;s.directionSeats[id]+=n;for(const f of s.flights)if(f.dest===id)f.capacity+=n;note(s,`${id}: +${n} мест на каждом рейсе, −${n*s.config.seatCost} кр.`);}
- if(action==='refill'){const n=Number(id);s.resources[extra]=round(s.resources[extra]+n);s.credits-=n*s.config.refillRate;note(s,`Куплено: ${RESOURCES[extra].name}, ${n} ед. за ${n*s.config.refillRate} кр.`);}
- if(action==='prepare'){const r=s.rooms.find(r=>r.id===id),type=extra??r.type,k=ROOM_RESOURCE[type];s.resources[k]=round(s.resources[k]-s.config.prepareCost);r.type=type;r.prepared=true;note(s,`Комната ${id+1}: ${TYPES[type].toLowerCase()} среда подготовлена.`);}
- if(action==='accept'){const r=s.rooms.find(r=>r.id===Number(extra));if(r.type!==p.type){const k=ROOM_RESOURCE[p.type];s.resources[k]=round(s.resources[k]-s.config.prepareCost);r.type=p.type;}r.prepared=true;r.p=p;s.queue=s.queue.filter(x=>x.id!==id);delete p.patience;s.stats.accepted+=p.count;note(s,`${p.name}: комната ${r.id+1}.`);advance(s);}
- if(action==='assign'){const f=s.flights.find(f=>f.id===extra);f.used+=seats(p);p.flight=f.id;note(s,`${p.name}: назначен на ${f.dest}, ${seats(p)} мест.`);advance(s);}
- if(action==='wait')advance(s);return {ok:true};
-}
-function advance(s){
- s.repEvents=[];const {used,made}=resourceFlow(s);const exhausted=[];
- for(const k of Object.keys(RESOURCES)){const value=round(s.resources[k]-used[k]+made[k]);if(value<=0&&used[k]>made[k])exhausted.push(k);s.resources[k]=Math.max(0,Math.min(s.config.resource,value));}
- s.time++;s.tick++;
- for(const f of s.flights.filter(f=>f.at===s.time)){
-  let count=0;for(const r of s.rooms){if(r.p?.flight===f.id){count+=r.p.count;rewardDeparture(s,r.p);r.p=null;r.prepared=true;}}
-  s.stats.departed+=count;s.stats.flights++;note(s,`${f.dest}: рейс отправлен. Пассажиров: ${count}.`);
- }
- s.flights=s.flights.filter(f=>f.at>s.time);for(const p of s.queue)p.patience--;
- for(const p of s.queue.filter(p=>p.patience<=0)){s.stats.left+=p.count;reputationChange(s,-3,p);note(s,`${p.name} покидает очередь.`);}s.queue=s.queue.filter(p=>p.patience>0);
- if(s.tick>=s.config.ticks){s.ended=true;for(const k of Object.keys(RESOURCES))s.resources[k]=s.config.resource;note(s,'Смена завершена. Ресурсы восстановлены.');}
- else if(exhausted.length){s.failed=true;note(s,'Исчерпан ресурс: '+exhausted.map(k=>RESOURCES[k].name).join(', ')+'. Работа приостановлена.');}
- else if(s.time%s.config.arrivalEvery===0&&s.queue.length<7)spawn(s);
-}
-export function nextShift(s){if(!s.ended||s.failed)return false;s.shift++;s.tick=0;s.ended=false;if(s.flights.at(-1).at<s.time+40)schedule(s,s.flights.at(-1).at);note(s,'Новая смена. Репутация, кредиты и брони сохранены.');return true;}
-export function validSave(s){try{return !!s&&s.version===VERSION&&Number.isInteger(s.credits)&&s.credits>=0&&DESTS.every(d=>Number.isInteger(s.directionSeats?.[d])&&s.directionSeats[d]>=0)&&Object.keys(ECONOMY).every(k=>Number.isInteger(s.config[k])&&s.config[k]>=0)&&Number.isInteger(s.rng)&&Number.isFinite(s.reputation)&&Array.isArray(s.repEvents)&&Number.isInteger(s.tick)&&s.tick>=0&&s.tick<=s.config.ticks&&Object.keys(RESOURCES).every(k=>Number.isInteger(s.resources[k])&&s.resources[k]>=0)&&Array.isArray(s.rooms)&&s.rooms.length>0&&s.rooms.every(r=>TYPES[r.type])&&Array.isArray(s.queue)&&[...s.queue,...s.rooms.flatMap(r=>r.p?[r.p]:[])].every(p=>RACES[p.raceId]&&PROFESSIONS[p.profession]&&CHARACTERS[p.character]&&FEATURES[p.feature]&&Number.isFinite(p.basePay))&&s.flights.length>0&&Array.isArray(s.log)&&s.stats&&s.config.rooms;}catch{return false;}}
+export const RES=['Органосмесь','Ксеносубстрат','Аквасреда','Техносреда'];
+export const DIR=['Луна','Марс','Венера','Европа','Титан'];
+export const RATE=[.1,.3,.4,.5,.6];
+export const CLASSES=['Бедный','Средний класс','Богатый','Высший класс','Состоятельный','Миллионер'];
+export const PAY=[150,300,500,700,1000,10000];
+export const SIZES=['Крошечный','Маленький','Средний','Большой','Огромный','Гигантский'];
+export const SEATS=[1,1,2,3,4,6];
+export const RACES=['Гуманоиды','Инсектоиды','Микоиды','Ксеноморфы','Акватики','Амфибии','Синтетики','Литоиды'];
+export const CYCLES=[[0,33,25,20,0,0],[38,25,19,15,0,0],[0,33,25,20,17,0],[0,0,31,25,21,16],[50,33,25,20,17,0],[0,33,25,20,0,0],[0,36,27,22,18,14],[0,0,0,30,25,19]];
+export const WEIGHTS=[[0,20,60,20,0,0],[25,50,20,5,0,0],[0,20,55,20,5,0],[0,0,20,50,25,5],[10,30,45,12,3,0],[0,30,55,15,0,0],[0,25,40,20,10,5],[0,0,0,25,60,15]];
+export const ARCH=[['Паломник',-.05,.15,.3,0],['Путешественник',0,.1,0,0],['Инспектор',.15,-.1,0,0],['Дипломат',.2,.1,0,0],['Торговец',.15,-.1,0,0],['Инженер',.05,.15,0,0],['Исследователь',.1,-.15,0,0],['Беженец',-.1,.15,0,0],['Контрабандист',.2,-.15,0,0],['Курьер',.1,-.15,0,0],['Странник',-.1,.2,0,0],['Беглец',.15,-.2,0,0],['Заражённый',.1,-.2,0,0],['Хранитель',.1,.1,0,0],['Изгнанник',-.15,.1,0,0],['Наблюдатель',0,.15,0,0],['Наёмник',.2,-.15,0,0],['Коллекционер',.1,.1,0,0],['Знаменитость',.2,-.1,0,0],['Тусовщик',.1,-.15,0,.5]];
+export const MACHINE=['Переработчик','Очиститель','Синтезатор','Усилитель'];
+export const POWER=[10,15,20,25];
+export const DIRTY=['Органический шлам','Ксенобиомасса','Загрязнённая жидкость','Минеральный техношлак'];
+export const CLEAN=[['Органический гель','Биоволокно'],['Споровая культура','Ферментный гель'],['Очищенная вода','Минеральный раствор'],['Проводящий гель','Минеральная матрица']];
+const names=['Иль','Нара','Эйра','Тэо','Кай','Мира','Рин','Соль','Вэй','Лио','Ада','Ори'];
+export const resource=p=>Math.floor(p.race/2);
+export const id=s=>++s.seq;
+export function random(s){s.seed=(Math.imul(s.seed,1664525)+1013904223)>>>0;return s.seed/4294967296;}
+function pick(s,a){return a[Math.floor(random(s)*a.length)];}
+function weighted(s,weights){let n=random(s)*weights.reduce((a,b)=>a+b,0);for(let i=0;i<weights.length;i++){n-=weights[i];if(n<0)return i;}return weights.length-1;}
+export function log(s,text){s.log.unshift({time:s.time,text});s.log=s.log.slice(0,100);}
+export function stats(p,stars=0){const a=p.tutorial?['Инженер',0,0,0,0]:ARCH[p.arch];const lack=Math.max(0,p.wealth-stars);return {cycle:Math.round(CYCLES[p.race][p.size]*(1+a[2])),limit:Math.min(300,Math.max(90,300-lack*30+300*a[3])),pay:p.tutorial?150:Math.round(PAY[p.wealth]*(1+a[1]-.05*lack)),waste:Math.round(p.seats*(1+a[4]))};}
+export function passenger(s,opts={}){let race=opts.race??pick(s,s.races);let cap=Math.max(...s.portals.filter(p=>!p.quest).map(p=>p.capacity));let size=opts.size??weighted(s,WEIGHTS[race].map((w,i)=>SEATS[i]<=cap?w:0));let wealth=opts.wealth??weighted(s,[40,30,18,9,2.9,.1]);let arch=opts.arch??Math.floor(random(s)*ARCH.length);if(wealth===5&&[0,7,11,12,14].includes(arch))arch=1;return {id:id(s),name:pick(s,names),race,size,wealth,arch,seats:SEATS[size],allowed:Array.from({length:s.directions},(_,i)=>i),portal:null,...opts};}
+function tutorialBatch(s,n){for(let i=0;i<n;i++)s.queue.push(passenger(s,{race:0,size:2,wealth:0,arch:5,tutorial:true,name:['Алекс','Мира','Тео','Ника','Рэй'][s.tutorial.sent+i]}));}
+export function create(seed=915){const s={version:1,seed,seq:0,time:0,paused:true,speed:1,credits:0,rep:0,stock:[50,0,0,0],cells:30,waste:0,dirty:[0,0,0,0],clean:Array.from({length:4},()=>[0,0]),queue:[],queueCap:2,refill:[],rooms:[{id:1,stars:0,p:null},{id:2,stars:0,p:null}],portals:[{id:1,dir:0,capacity:4,quest:null,remaining:0,total:0}],races:[0],directions:1,offers:[],active:[],offerCap:2,activeCap:2,refresh:300,freeRefresh:true,misses:0,tutorial:{sent:0,stage:0,done:false},factory:false,power:50,grid:Array(25).fill(null),tiles:[6,7,8,11,12,13,16,17,18],inventory:[[],[],[],[]],tech:{portals:1,room:false,generator:false,machine:1},log:[],metrics:{sent:0,lost:0,earned:0,spent:0,waste:0,produced:0,contracts:0},alerts:0};s.grid[12]={type:4};tutorialBatch(s,1);log(s,'Добро пожаловать. Пять инженеров ждут отправки на Луну.');return s;}
+export function normal(seed=915){let s=create(seed);s.queue=[];s.tutorial.sent=5;s.credits=750;s.stock=[35,0,0,0];s.cells=20;act(s,'factoryOpen');s.paused=true;return s;}
+export function matches(p,q){return p.race===q.race&&p.wealth<=q.maxWealth&&p.allowed.includes(q.dir);}
+export function occupants(s,portal){return s.rooms.filter(r=>r.p?.portal===portal).map(r=>r.p);}
+export function demand(s){const qs=s.active.filter(q=>q.done<q.count).sort((a,b)=>a.maxWealth-b.maxWealth);let pool=[...s.queue,...s.rooms.filter(r=>r.p).map(r=>r.p)];let used=new Set();return qs.map(q=>{let assigned=pool.filter(p=>p.portal===q.portal);assigned.forEach(p=>used.add(p.id));let need=q.count-q.done-assigned.length;for(const p of pool){if(need>0&&!used.has(p.id)&&p.portal===null&&matches(p,q)){used.add(p.id);need--;}}return {q,need:Math.max(0,need)};});}
+export function generate(s){let needs=demand(s).filter(x=>x.need>0),p;if(needs.length&&s.misses>=2){let q=needs.sort((a,b)=>a.q.maxWealth-b.q.maxWealth)[0].q;p=passenger(s,{race:q.race,wealth:weighted(s,q.maxWealth===0?[1]:[40,30]),questOnly:true});}else p=passenger(s);s.misses=needs.some(x=>matches(p,x.q))?0:s.misses+1;return p;}
+export function offer(s){let race=pick(s,s.races),maxWealth=pick(s,[0,1]),count=pick(s,[1,2,3,4,5,6,7,8,9,10]),dir=Math.floor(random(s)*s.directions);return {id:id(s),race,maxWealth,count,dir,done:0,launches:0,base:Math.round(count*PAY[maxWealth]*1.2*RATE[dir]),rep:5*count+Math.round(RATE[dir]*100),capacity:count*Math.max(...WEIGHTS[race].map((w,i)=>w?SEATS[i]:0))};}
+export function reward(q){return Math.round(q.base*(q.count<4?1:q.launches===1?1.5:q.launches===2?1.3:1));}
+function refresh(s){s.offers=Array.from({length:s.offerCap},()=>offer(s));}
+export function remaining(p){return Math.max(0,Math.min(p.limit-p.age,p.fuel));}
+export function maxFuel(s,p,r){let st=stats(p,r.stars);return Math.max(0,Math.min(s.stock[resource(p)],p.tutorial?3:Infinity,Math.floor(((p.limit??st.limit)-(p.age??0)-(p.fuel??0)+1e-7)/st.cycle)));}
+export function energy(s){return s.power-s.grid.reduce((v,m)=>v+(m&&m.type<4?POWER[m.type]:0),0);}
+function spend(s,n){if(s.credits<n)throw Error('Недостаточно кредитов');s.credits-=n;s.metrics.spent+=n;}
+function earn(s,n){s.credits+=n;s.metrics.earned+=n;}
+function check(ok,message){if(!ok)throw Error(message);}
+function removeP(s,p){for(const r of s.rooms)if(r.p?.id===p.id)r.p=null;let n=s.queue.length;s.queue=s.queue.filter(x=>x.id!==p.id);if(n!==s.queue.length&&s.tutorial.done)s.refill.push(60);}
+export function canAssign(s,p,port){if(!port)return 'Нет портала';if(port.remaining>0)return 'Портал уже запущен';if(!p.allowed.includes(port.dir))return 'Направление недоступно';const old=s.portals.find(x=>x.id===p.portal);if(old?.remaining>0)return 'Пассажир уже отправляется';let occ=occupants(s,port.id).filter(x=>x.id!==p.id);if(occ.reduce((n,p)=>n+p.seats,0)+p.seats>port.capacity)return 'Не хватает мест';if(port.quest){let q=s.active.find(q=>q.id===port.quest);if(!q||!matches(p,q))return 'Не подходит под требования контракта';if(occ.length+q.done>=q.count)return 'Группа уже собрана';}return '';}
+export function act(s,type,a={}){try{let r=s.rooms.find(x=>x.id===a.room),p=r?.p,port=s.portals.find(x=>x.id===a.portal),q=s.active.find(x=>x.id===a.quest);switch(type){
+case 'pause':s.paused=!s.paused;break;
+case 'speed':check([1,2].includes(a.value),'Доступны скорости 1× и 2×');s.speed=a.value;break;
+case 'admit':{p=s.queue.find(x=>x.id===a.id);check(p&&r&&!r.p,'Выберите свободную комнату');let n=a.n;check(Number.isInteger(n)&&n>=1,'Минимум 1 целая единица');check(!p.tutorial||n<=3,'В обучении максимум 3 единицы');check(s.stock[resource(p)]>=n,'Нет нужного ресурса');let st=stats(p,r.stars);check(n*st.cycle<=st.limit||a.confirm,'Часть ресурса сгорит. Подтвердите списание');s.stock[resource(p)]-=n;s.queue=s.queue.filter(x=>x.id!==p.id);r.p={...p,...st,age:0,fuel:Math.min(n*st.cycle,st.limit),cycleProgress:0,grace:0,allocated:n,warned:false};if(s.tutorial.done)s.refill.push(60);log(s,`${p.name}: комната ${r.id}, запас ${n} ед.`);break;}
+case 'reject':{p=s.queue.find(x=>x.id===a.id);check(p,'Пассажир уже ушёл');check(!p.tutorial,'Обучающего инженера нужно отправить');removeP(s,p);break;}
+case 'refuel':{check(p&&!s.portals.find(x=>x.id===p.portal)?.remaining,'Пассажир недоступен');check(p.age<p.limit,'Предельный срок истёк');let n=a.n;check(Number.isInteger(n)&&n>0,'Выберите целое количество');check(n<=s.stock[resource(p)],'Недостаточно ресурса');let gain=Math.min(n*p.cycle,p.limit-p.age-p.fuel);check(gain>0,'Запас уже покрывает весь срок');check(gain+1e-7>=n*p.cycle||a.confirm,`Будет списано ${n} ед., прибавится только ${Math.ceil(gain)} с. Подтвердите`);s.stock[resource(p)]-=n;p.fuel+=gain;p.allocated+=n;p.grace=0;p.warned=false;break;}
+case 'assign':check(p,'Нет пассажира');{let reason=canAssign(s,p,port);check(!reason,reason);p.portal=port.id;}break;
+case 'unassign':check(p&&!s.portals.find(x=>x.id===p.portal)?.remaining,'Отправка уже началась');p.portal=null;break;
+case 'direction':check(port&&!port.quest&&!port.remaining&&!occupants(s,port.id).length,'Направление фиксировано');check(Number.isInteger(a.dir)&&a.dir>=0&&a.dir<s.directions,'Направление закрыто');port.dir=a.dir;break;
+case 'launch':{check(port&&!port.remaining,'Портал занят');let people=occupants(s,port.id);check(people.length,'Назначьте пассажиров из комнат');let seats=people.reduce((n,p)=>n+p.seats,0);check(s.cells>=seats,'Не хватает портал-ячеек');s.cells-=seats;port.total=port.remaining=10+4*seats;if(port.quest)s.active.find(q=>q.id===port.quest).launches++;log(s,`${DIR[port.dir]}: запущен портал, ${people.length} пасс., ${seats} мест`);break;}
+case 'portalUpgrade':check(port&&!port.quest&&!port.remaining&&port.capacity<10,'Улучшение недоступно');spend(s,(port.capacity-2)/2*100);port.capacity+=2;break;
+case 'roomUpgrade':check(r&&!r.p&&r.stars<5,'Комната должна быть пустой, максимум 5 звёзд');spend(s,100*(r.stars+1));r.stars++;break;
+case 'buy':check(Number.isInteger(a.n)&&a.n>0,'Нужно целое количество');check(a.kind==='cells'||Number.isInteger(a.kind)&&a.kind>=0&&a.kind<4,'Неизвестный ресурс');spend(s,a.n*(a.kind==='cells'?2:10));if(a.kind==='cells')s.cells+=a.n;else s.stock[a.kind]+=a.n;break;
+case 'factoryOpen':check(!s.factory&&s.tutorial.sent===5,'Сначала отправьте 5 инженеров');spend(s,750);s.factory=true;s.inventory=[[1],[1],[1],[]];s.tutorial.done=true;s.stock[1]=s.stock[2]=s.stock[3]=15;earn(s,500);s.rep+=35;s.queue=Array.from({length:2},()=>generate(s));s.refill=[];refresh(s);log(s,'Обучение завершено: +500 кредитов, +35 репутации. Фабрика открыта.');break;
+case 'accept':{check(s.tutorial.done,'Сначала завершите обучение');q=s.offers.find(x=>x.id===a.quest);check(q,'Предложение недоступно');check(s.active.length<s.activeCap,'Все активные слоты заняты');q.portal=id(s);s.portals.push({id:q.portal,dir:q.dir,capacity:q.capacity,quest:q.id,remaining:0,total:0});s.active.push(q);s.offers=s.offers.filter(x=>x.id!==q.id);log(s,`Принят контракт: ${DIR[q.dir]}, ${q.count} пасс.`);break;}
+case 'claim':check(q&&q.done===q.count,'Контракт ещё не выполнен');earn(s,reward(q));s.rep+=q.rep;s.metrics.contracts++;s.portals=s.portals.filter(x=>x.id!==q.portal);s.active=s.active.filter(x=>x.id!==q.id);log(s,`Контракт завершён: +${reward(q)} кредитов, +${q.rep} репутации`);break;
+case 'cancel':{check(q&&q.done<q.count,'Выполненный контракт нужно завершить');check(!s.portals.find(x=>x.id===q.portal)?.remaining,'Нельзя отменить во время отправки');spend(s,Math.min(s.credits,Math.round(q.base*.1)));s.active=s.active.filter(x=>x.id!==q.id);s.portals=s.portals.filter(x=>x.id!==q.portal);for(let p of [...s.queue,...s.rooms.filter(r=>r.p).map(r=>r.p)]){if(p.portal===q.portal){removeP(s,p);}else if(p.questOnly&&!s.active.some(q=>matches(p,q)))removeP(s,p);}log(s,'Контракт отменён. Выделенные ресурсы не возвращены.');break;}
+case 'refresh':check(s.tutorial.done&&s.freeRefresh,'Бесплатный сброс пока недоступен');refresh(s);s.freeRefresh=false;break;
+case 'research':{check(s.tutorial.done,'Сначала завершите обучение');let cost=30,apply;switch(a.branch){case 'direction':check(s.directions<5,'Все направления открыты');cost=20+s.directions*10;apply=()=>s.directions++;break;case 'queue':check(s.queueCap<6,'Очередь уже максимальная');cost=10+s.queueCap*10;apply=()=>{s.queueCap++;s.refill.push(60);};break;case 'offer':check(s.offerCap<5,'Все предложения открыты');cost=10+s.offerCap*10;apply=()=>{s.offerCap++;s.offers.push(offer(s));};break;case 'active':check(s.activeCap<5,'Все слоты открыты');cost=10+s.activeCap*10;apply=()=>s.activeCap++;break;case 'portal':check(s.tech.portals<5,'Все порталы исследованы');cost=20+s.tech.portals*10;apply=()=>s.tech.portals++;break;case 'room':check(!s.tech.room,'Уже исследовано');apply=()=>s.tech.room=true;break;case 'generator':check(!s.tech.generator,'Уже исследовано');apply=()=>s.tech.generator=true;break;case 'race':check(Number.isInteger(a.race)&&a.race>0&&a.race<8&&!s.races.includes(a.race),'Раса уже открыта');apply=()=>s.races.push(a.race);break;case 'machine':check(s.tech.machine<3,'Все уровни открыты');cost=s.tech.machine===1?30:40;apply=()=>s.tech.machine++;break;default:throw Error('Неизвестная технология');}check(s.rep>=cost,'Недостаточно репутации');s.rep-=cost;apply();log(s,`Исследование завершено (−${cost} репутации)`);break;}
+case 'buildRoom':check(s.tech.room&&s.rooms.length===2,'Нужно исследовать комнату №3');spend(s,250);s.rooms.push({id:3,stars:0,p:null});break;
+case 'buildPortal':{let n=s.portals.filter(p=>!p.quest).length;check(n<s.tech.portals,'Нужно исследовать следующий портал');spend(s,250+(n-1)*100);s.portals.push({id:id(s),dir:0,capacity:4,quest:null,remaining:0,total:0});break;}
+case 'generator':check(s.tech.generator&&s.power===50,'Сначала исследуйте генератор');spend(s,250);s.power=70;break;
+case 'machineBuy':check(s.factory&&Number.isInteger(a.type)&&a.type>=0&&a.type<4,'Фабрика закрыта');spend(s,100);s.inventory[a.type].push(1);break;
+case 'place':{check(s.factory&&s.tiles.includes(a.tile)&&!s.grid[a.tile],'Ячейка недоступна');check(s.inventory[a.type]?.length,'Нет машины в инвентаре');s.inventory[a.type].sort((a,b)=>b-a);s.grid[a.tile]={type:a.type,level:s.inventory[a.type].shift(),recipe:0,on:true,progress:0,job:null};break;}
+case 'tile':check(s.factory&&Number.isInteger(a.tile)&&a.tile>=0&&a.tile<25&&!s.tiles.includes(a.tile),'Ячейка уже открыта');spend(s,50);s.tiles.push(a.tile);break;
+case 'machine':{let m=s.grid[a.tile];check(m&&m.type<4,'Выберите машину');if(a.op==='toggle')m.on=!m.on;else {check(!m.job,'Дождитесь окончания цикла; выключите, чтобы не начинать следующий');if(a.op==='remove'){s.inventory[m.type].push(m.level);s.grid[a.tile]=null;}else if(a.op==='recipe'){check(Number.isInteger(a.recipe)&&a.recipe>=0&&a.recipe<4&&m.type<3,'Недопустимый рецепт');m.recipe=a.recipe;}else if(a.op==='upgrade'){check(m.type<2&&m.level<3&&m.level<s.tech.machine,'Нужно исследование уровня; синтезатор ограничен I');spend(s,m.level===1?100:250);m.level++;}}break;}
+default:throw Error('Неизвестное действие');}return {ok:true};}catch(e){return {ok:false,error:e.message};}}
+function factoryTick(s,dt){if(!s.factory||energy(s)<=0)return;for(let i=0;i<25;i++){let m=s.grid[i];if(!m||m.type>2)continue;if(!m.job&&m.on){let rec=m.recipe,boost=s.grid.reduce((n,b,j)=>n+(b?.type===3&&(Math.abs(Math.floor(i/5)-Math.floor(j/5))+Math.abs(i%5-j%5)===1)?2:0),0),input=0,output=0,duration=m.type===2?25:10;if(m.type===0){input=[2,4,6][m.level-1];output=[1,2,4][m.level-1]+boost;if(s.waste<input)continue;s.waste-=input;}else if(m.type===1){input=[2,4,6][m.level-1];output=m.level+boost;if(s.dirty[rec]<input)continue;s.dirty[rec]-=input;}else {if(s.clean[rec].some(n=>n<2))continue;s.clean[rec]=s.clean[rec].map(n=>n-2);output=1+boost;}m.job={rec,output,duration};m.progress=0;}if(m.job){m.progress+=dt;if(m.progress+1e-8>=m.job.duration){let {rec,output}=m.job;if(m.type===0)s.dirty[rec]+=output;else if(m.type===1)s.clean[rec]=s.clean[rec].map(n=>n+output);else {s.stock[rec]+=output;s.metrics.produced+=output;}m.job=null;m.progress=0;}}}}
+export function advance(s,dt){if(s.paused||!Number.isFinite(dt)||dt<=0)return;let left=dt*s.speed;while(left>1e-8){let d=Math.min(.1,left);left-=d;s.time+=d;
+for(let port of [...s.portals])if(port.remaining>0){port.remaining=Math.max(0,port.remaining-d);if(port.remaining<1e-8){port.remaining=0;let ps=occupants(s,port.id);for(let p of ps){earn(s,p.pay);s.metrics.sent++;if(p.tutorial)s.tutorial.sent++;removeP(s,p);}if(port.quest){let q=s.active.find(x=>x.id===port.quest);q.done+=ps.length;}log(s,`${DIR[port.dir]}: доставлено ${ps.length}, +${ps.reduce((n,p)=>n+p.pay,0)} кредитов`);if(!s.tutorial.done&&(s.tutorial.sent===1&&s.tutorial.stage===0||s.tutorial.sent===3&&s.tutorial.stage===1)){s.tutorial.stage++;tutorialBatch(s,2);}}}
+for(let r of s.rooms){let p=r.p;if(!p||s.portals.find(x=>x.id===p.portal)?.remaining)continue;let run=Math.max(0,Math.min(d,p.fuel,p.limit-p.age));p.age+=d;p.fuel=Math.max(0,p.fuel-run);p.cycleProgress+=run;while(p.cycleProgress+1e-8>=p.cycle){p.cycleProgress-=p.cycle;s.waste+=p.waste;s.metrics.waste+=p.waste;}if(remaining(p)<=30&&!p.warned){p.warned=true;s.alerts++;}if(remaining(p)<=1e-8){p.grace+=d-run;if(p.grace>=2-1e-8){removeP(s,p);s.metrics.lost++;log(s,`${p.name} улетел без награды`);if(p.tutorial)s.queue.push(passenger(s,{race:0,size:2,wealth:0,arch:5,tutorial:true,name:p.name}));}}}
+if(s.tutorial.done){s.refill=s.refill.map(n=>n-d);for(let i=s.refill.length-1;i>=0;i--)if(s.refill[i]<=1e-8&&s.queue.length<s.queueCap){s.refill.splice(i,1);s.queue.push(generate(s));}s.refresh-=d;if(s.refresh<=1e-8){s.refresh+=300;s.freeRefresh=true;refresh(s);}}
+factoryTick(s,d);
+}}
 

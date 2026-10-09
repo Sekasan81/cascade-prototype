@@ -1,0 +1,1 @@
+{"name":"quiet-orbit-prototype","private":true,"type":"module","scripts":{"start":"node serve.mjs","test":"node tests/engine.test.mjs","test:browser":"node tests/browser.mjs"}}
